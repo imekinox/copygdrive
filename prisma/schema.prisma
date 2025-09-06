@@ -1,0 +1,140 @@
+// This is your Prisma schema file,
+// learn more about it in the docs: https://pris.ly/d/prisma-schema
+
+generator client {
+  provider = "prisma-client-js"
+  previewFeatures = ["driverAdapters"]
+}
+
+datasource db {
+  provider = "sqlite"
+  url      = env("DATABASE_URL")
+}
+
+// User model for authentication
+model User {
+  id            String    @id @default(cuid())
+  email         String    @unique
+  name          String?
+  image         String?
+  emailVerified DateTime?
+  credits       Int       @default(100) // Free credits on signup (100 GB)
+  
+  accounts      Account[]
+  sessions      Session[]
+  copyJobs      CopyJob[]
+  
+  createdAt     DateTime  @default(now())
+  updatedAt     DateTime  @updatedAt
+}
+
+// Account model for OAuth providers
+model Account {
+  id                String  @id @default(cuid())
+  userId            String
+  type              String
+  provider          String
+  providerAccountId String
+  refresh_token     String?
+  access_token      String?
+  expires_at        Int?
+  token_type        String?
+  scope             String?
+  id_token          String?
+  session_state     String?
+  
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+  
+  @@unique([provider, providerAccountId])
+}
+
+// Session model for Auth.js
+model Session {
+  id           String   @id @default(cuid())
+  sessionToken String   @unique
+  userId       String
+  expires      DateTime
+  
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+}
+
+// Copy job tracking
+model CopyJob {
+  id                String   @id @default(cuid())
+  userId            String
+  
+  sourceFolderId    String
+  sourceFolderName  String
+  destFolderId      String
+  destFolderName    String
+  
+  status            String   @default("queued") // queued, scanning, copying, completed, failed, cancelled
+  
+  totalItems        Int?
+  completedItems    Int      @default(0)
+  failedItems       Int      @default(0)
+  
+  totalBytes        String?  @default("0") // Using String for BigInt compatibility
+  copiedBytes       String   @default("0") // Using String for BigInt compatibility
+  
+  creditsUsed       Int      @default(0)
+  creditsReserved   Int      @default(0) // Reserved credits at job start
+  
+  errorMessage      String?
+  
+  startedAt         DateTime?
+  completedAt       DateTime?
+  createdAt         DateTime @default(now())
+  updatedAt         DateTime @updatedAt
+  
+  user  User       @relation(fields: [userId], references: [id], onDelete: Cascade)
+  items CopyItem[]
+  
+  @@index([userId, status])
+  @@index([status])
+}
+
+// Individual items in a copy job
+model CopyItem {
+  id          String   @id @default(cuid())
+  jobId       String
+  
+  sourceId    String
+  sourceName  String
+  sourcePath  String   // Full path for display
+  mimeType    String
+  size        String?  // Using String for BigInt compatibility
+  
+  newId       String?  // ID in destination after copy
+  status      String   @default("pending") // pending, copying, completed, failed, skipped
+  error       String?
+  
+  retryCount  Int      @default(0)
+  
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+  
+  job CopyJob @relation(fields: [jobId], references: [id], onDelete: Cascade)
+  
+  @@index([jobId, status])
+  @@index([jobId])
+}
+
+// Credit purchases for future payments
+model CreditPurchase {
+  id          String   @id @default(cuid())
+  userId      String
+  
+  credits     Int      // Number of credits (GB)
+  amount      Float    // Amount in USD
+  currency    String   @default("usd")
+  
+  stripePaymentIntentId String?
+  stripeSessionId       String?
+  
+  status      String   // pending, completed, failed
+  
+  createdAt   DateTime @default(now())
+  
+  @@index([userId])
+}
