@@ -27,6 +27,7 @@ export class SyncProcessor {
   private destFileMap: Map<string, FileInfo> = new Map() // name -> file info for destination
   private processedItems = 0
   private skippedItems = 0
+  private skippedFolders = 0  // Count of folders that already existed
   private totalSize = 0
   private copiedSize = 0  // Size of newly copied files
   private skippedSize = 0  // Size of already existing files
@@ -74,9 +75,9 @@ export class SyncProcessor {
       console.log(`  - Folders to create: ${strategy.foldersToCreate.size}`)
       
       // Update job with sync information
-      // Total items = all items found (new + existing + to update)
-      const totalSourceItems = strategy.toCreate.length + strategy.toSkip.length + strategy.toUpdate.length
-      const itemsToProcess = strategy.toCreate.length + strategy.toUpdate.length
+      // Total items = all items found (files + folders)
+      const totalSourceItems = strategy.toCreate.length + strategy.toSkip.length + strategy.toUpdate.length + strategy.foldersToCreate.size
+      const itemsToProcess = strategy.toCreate.length + strategy.toUpdate.length + strategy.foldersToCreate.size
       
       // Calculate size of already copied files
       for (const file of strategy.toSkip) {
@@ -122,6 +123,8 @@ export class SyncProcessor {
           // Use existing folder
           console.log(`  ✅ Found existing subfolder: ${folderName} (${existingFolders.data.files[0].id})`)
           newFolderId = existingFolders.data.files[0].id!
+          // Track skipped folders
+          this.skippedFolders++
         } else {
           // Create new folder
           const newFolder = await this.rateLimiter.executeWithRetry(
@@ -138,10 +141,11 @@ export class SyncProcessor {
           )
           console.log(`  📁 Created subfolder: ${folderName} (${newFolder.data.id})`)
           newFolderId = newFolder.data.id!
+          // Only increment for newly created folders
+          this.processedItems++
         }
         
         folderMappings.set(sourceFolderId, newFolderId)
-        this.processedItems++
         
         // Update progress
         await this.updateProgress()
@@ -166,8 +170,8 @@ export class SyncProcessor {
       }
       
       // Mark job as completed
-      // Total completed = newly processed + previously existing (skipped)
-      const totalCompleted = this.processedItems + strategy.toSkip.length
+      // Total completed = newly processed items + skipped files + skipped folders
+      const totalCompleted = this.processedItems + strategy.toSkip.length + this.skippedFolders
       
       // Calculate total copied size (newly copied + previously existing)
       const totalCopiedSize = this.copiedSize + this.skippedSize

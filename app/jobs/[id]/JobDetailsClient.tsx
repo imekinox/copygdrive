@@ -151,12 +151,14 @@ export default function JobDetailsClient({ initialJob }: JobDetailsClientProps) 
             
             <div>
               <div className="flex justify-between text-sm mb-2">
-                <span>Data Progress</span>
+                <span>Data Transferred</span>
                 <span>
-                  {formatBytes(job.copiedBytes)} / {job.totalBytes ? formatBytes(job.totalBytes) : '?'}
+                  {formatBytes(job.copiedBytes)}{job.totalBytes && job.totalBytes !== '0' ? ` / ${formatBytes(job.totalBytes)}` : ''}
                 </span>
               </div>
-              <Progress value={bytesProgress} className="h-2" />
+              {job.totalBytes && job.totalBytes !== '0' && (
+                <Progress value={bytesProgress} className="h-2" />
+              )}
             </div>
           </div>
 

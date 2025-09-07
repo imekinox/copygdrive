@@ -21,6 +21,12 @@ interface FolderStats {
   totalItems: number
   totalSize: number
   totalSizeGB: number
+  toSkip?: number
+  toCreate?: number
+  toUpdate?: number
+  sizeToTransfer?: number
+  sizeToTransferGB?: number
+  hasOnlyGoogleFiles?: boolean
 }
 
 export default function NewJobPage() {
@@ -33,13 +39,16 @@ export default function NewJobPage() {
   const [error, setError] = useState<string | null>(null)
 
   const estimateJob = async () => {
-    if (!sourceFolder) return
+    if (!sourceFolder || !destFolder) return
     
     setEstimating(true)
     setError(null)
     
     try {
-      const response = await fetch(`/api/drive/folders/${sourceFolder.id}/stats`)
+      const url = new URL(`/api/drive/folders/${sourceFolder.id}/stats`, window.location.origin)
+      url.searchParams.set('destFolderId', destFolder.id)
+      
+      const response = await fetch(url.toString())
       
       if (!response.ok) {
         throw new Error('Failed to estimate folder size')
@@ -71,7 +80,7 @@ export default function NewJobPage() {
           sourceFolderName: sourceFolder.name,
           destFolderId: destFolder.id,
           destFolderName: destFolder.name,
-          estimatedSizeGB: stats?.totalSizeGB || 1 // Pass the estimate we already calculated
+          estimatedSizeGB: 1 // For now, keep 1 credit minimum
         })
       })
       
@@ -148,7 +157,7 @@ export default function NewJobPage() {
               </div>
 
               {stats && (
-                <div className="p-4 bg-blue-50 rounded-lg">
+                <div className="p-4 bg-blue-50 rounded-lg space-y-4">
                   <div className="grid grid-cols-3 gap-4 text-center">
                     <div>
                       <p className="text-2xl font-bold text-blue-600">
@@ -161,17 +170,48 @@ export default function NewJobPage() {
                     </div>
                     <div>
                       <p className="text-2xl font-bold text-blue-600">
-                        {stats.totalSizeGB}
+                        {(stats.toCreate || 0) + (stats.toUpdate || 0)}
                       </p>
-                      <p className="text-sm text-blue-800">GB</p>
+                      <p className="text-sm text-blue-800">Files to Process</p>
+                      {stats.sizeToTransferGB !== undefined && stats.sizeToTransferGB > 0 && !stats.hasOnlyGoogleFiles && (
+                        <p className="text-xs text-blue-600 mt-1">
+                          {stats.sizeToTransferGB < 1 ? 
+                            `${Math.round(stats.sizeToTransferGB * 1024)} MB` : 
+                            `${stats.sizeToTransferGB.toFixed(2)} GB`}
+                        </p>
+                      )}
                     </div>
                     <div>
                       <p className="text-2xl font-bold text-blue-600">
-                        {stats.totalSizeGB}
+                        {Math.max(1, Math.ceil((stats.toCreate || 0) / 100))}
                       </p>
                       <p className="text-sm text-blue-800">Credits Required</p>
+                      <p className="text-xs text-blue-600 mt-1">
+                        (1 per 100 files)
+                      </p>
                     </div>
                   </div>
+                  
+                  {stats.toSkip !== undefined && (
+                    <div className="border-t pt-3">
+                      <div className="grid grid-cols-2 gap-2 text-sm">
+                        <div className="flex justify-between">
+                          <span className="text-gray-600">New files:</span>
+                          <span className="font-medium text-green-600">{stats.toCreate || 0}</span>
+                        </div>
+                        {stats.toUpdate !== undefined && stats.toUpdate > 0 && (
+                          <div className="flex justify-between">
+                            <span className="text-gray-600">To update:</span>
+                            <span className="font-medium text-yellow-600">{stats.toUpdate}</span>
+                          </div>
+                        )}
+                        <div className="flex justify-between">
+                          <span className="text-gray-600">Up to date:</span>
+                          <span className="font-medium text-gray-500">{stats.toSkip || 0}</span>
+                        </div>
+                      </div>
+                    </div>
+                  )}
                 </div>
               )}
 
