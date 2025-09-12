@@ -116,6 +116,8 @@ export function FileTreeView({ jobId, className }: FileTreeViewProps) {
         return <Clock className="w-4 h-4 text-gray-400" />
       case 'skipped':
         return <CheckCircle className="w-4 h-4 text-gray-400" />
+      case 'updated':
+        return <CheckCircle className="w-4 h-4 text-blue-500" />
       default:
         return <HelpCircle className="w-4 h-4 text-gray-400" />
     }

@@ -56,26 +56,61 @@ export async function POST(request: Request) {
       )
     }
     
-    // Check user credits (based on number of items)
-    const itemsToProcess = (job.discovered_items || 0) + (job.discovered_folders || 0)
+    // Calculate items to process (excluding skipped items)
+    const totalItems = (job.discovered_items || 0) + (job.discovered_folders || 0)
+    const skippedItems = job.skipped_items || 0
+    const itemsToProcess = totalItems - skippedItems
+    
+    // Calculate required credits (1 credit per 100 items or fraction)
+    const requiredCredits = Math.ceil(itemsToProcess / 100)
+    
+    // Get user's current credits
     const { data: user } = await supabaseAdmin
       .from('profiles')
       .select('credits')
       .eq('id', session.user.id)
       .single()
     
-    const hasEnoughCredits = user && user.credits >= itemsToProcess
-    
-    if (!hasEnoughCredits && itemsToProcess > 0) {
-      console.log(`Warning: User may not have enough credits. Has ${user?.credits}, needs ${itemsToProcess} items`)
+    if (!user) {
+      return NextResponse.json(
+        { error: "User profile not found" },
+        { status: 404 }
+      )
     }
     
-    // Activate the job by changing status to queued
+    // Check if user has enough credits
+    if (user.credits < requiredCredits) {
+      console.log(`User doesn't have enough credits. Has ${user.credits}, needs ${requiredCredits}`)
+      return NextResponse.json(
+        { 
+          error: "Insufficient credits",
+          required: requiredCredits,
+          available: user.credits,
+          itemsToProcess
+        },
+        { status: 402 } // Payment Required
+      )
+    }
+    
+    // Deduct credits from user
+    const { error: deductError } = await supabaseAdmin
+      .from('profiles')
+      .update({
+        credits: user.credits - requiredCredits
+      })
+      .eq('id', session.user.id)
+    
+    if (deductError) {
+      console.error('Error deducting credits:', deductError)
+      throw deductError
+    }
+    
+    // Activate the job by changing status to queued and recording credits used
     const { error: updateError } = await supabaseAdmin
       .from('copy_jobs')
       .update({
         status: 'queued',
-        credits_reserved: Math.min(itemsToProcess, user?.credits || 0) // Reserve credits based on items
+        credits_used: requiredCredits
       })
       .eq('id', jobId)
     

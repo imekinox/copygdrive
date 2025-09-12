@@ -210,17 +210,25 @@ export class JobQueueProcessor {
           discoveredItems: job.discovered_items || 0,
           discoveredFolders: job.discovered_folders || 0,
           discoveredBytes: job.discovered_bytes || 0,
-          skippedItems: 0
+          skippedItems: 0,
+          updatedItems: 0
         }
         
-        // Count skipped items from copy_items table
+        // Count skipped and updated items from copy_items table
         const { count: skippedCount } = await this.supabaseAdmin
           .from('copy_items')
           .select('*', { count: 'exact', head: true })
           .eq('job_id', job.id)
           .eq('status', 'skipped')
         
+        const { count: updatedCount } = await this.supabaseAdmin
+          .from('copy_items')
+          .select('*', { count: 'exact', head: true })
+          .eq('job_id', job.id)
+          .eq('status', 'updated')
+        
         scanProgress.skippedItems = skippedCount || 0
+        scanProgress.updatedItems = updatedCount || 0
         
         console.log(`📊 Using cached scan: ${scanProgress.discoveredItems} files, ${scanProgress.discoveredFolders} folders, ${scanProgress.skippedItems} already exist`)
       } else {
@@ -255,6 +263,7 @@ export class JobQueueProcessor {
                   discovered_folders: progress.discoveredFolders,
                   discovered_bytes: progress.discoveredBytes,
                   skipped_items: progress.skippedItems,
+                  updated_items: progress.updatedItems,
                   last_scan_path: progress.lastPath
                 })
                 .eq('id', job.id)
@@ -269,18 +278,48 @@ export class JobQueueProcessor {
                 }
               })
               
-              console.log(`📊 Scan progress: ${progress.discoveredItems} files, ${progress.discoveredFolders} folders, ${progress.skippedItems} already exist`)
+              console.log(`📊 Scan progress: ${progress.discoveredItems} files, ${progress.discoveredFolders} folders, ${progress.skippedItems} already exist, ${progress.updatedItems} to update`)
             },
             concurrency
           )
       }
       
-      console.log(`✅ Scan complete: ${scanProgress.discoveredItems} files, ${scanProgress.discoveredFolders} folders, ${scanProgress.skippedItems} already exist`)
+      console.log(`✅ Scan complete: ${scanProgress.discoveredItems} files, ${scanProgress.discoveredFolders} folders, ${scanProgress.skippedItems} already exist, ${scanProgress.updatedItems} to update`)
       
       // Check if this is a draft job (estimation only)
       if (job.status === 'draft') {
         // For draft jobs, we only scan, not copy
         console.log(`📊 Draft job - estimation complete, skipping copy phase`)
+        
+        // Check if there's anything to copy/update
+        const totalItems = scanProgress.discoveredItems + scanProgress.discoveredFolders
+        const itemsToProcess = totalItems - scanProgress.skippedItems
+        
+        if (itemsToProcess === 0) {
+          // Everything is up to date - delete the draft job
+          console.log(`✨ Everything is up to date! Deleting draft job...`)
+          
+          // Delete copy_items first (foreign key constraint)
+          await this.supabaseAdmin
+            .from('copy_items')
+            .delete()
+            .eq('job_id', job.id)
+          
+          // Delete the draft job
+          await this.supabaseAdmin
+            .from('copy_jobs')
+            .delete()
+            .eq('id', job.id)
+          
+          // Mark the queue job as completed
+          await this.supabaseAdmin.rpc('complete_job', {
+            p_queue_id: queueData,
+            p_worker_id: this.workerId
+          })
+          
+          console.log(`🗑️ Draft job deleted as no action needed`)
+          return
+        }
         
         // Update scan completion for draft job
         await this.supabaseAdmin
@@ -292,7 +331,8 @@ export class JobQueueProcessor {
             discovered_items: scanProgress.discoveredItems,
             discovered_folders: scanProgress.discoveredFolders,
             discovered_bytes: scanProgress.discoveredBytes,
-            skipped_items: scanProgress.skippedItems
+            skipped_items: scanProgress.skippedItems,
+            updated_items: scanProgress.updatedItems
           })
           .eq('id', job.id)
         
@@ -317,7 +357,8 @@ export class JobQueueProcessor {
             discovered_items: scanProgress.discoveredItems,
             discovered_folders: scanProgress.discoveredFolders,
             discovered_bytes: scanProgress.discoveredBytes,
-            skipped_items: scanProgress.skippedItems
+            skipped_items: scanProgress.skippedItems,
+            updated_items: scanProgress.updatedItems
           })
           .eq('id', job.id)
       }

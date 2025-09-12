@@ -7,7 +7,7 @@ import FolderPicker from '@/components/FolderPicker'
 import { Button } from '@/components/ui/button'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
 import { Alert, AlertDescription } from '@/components/ui/alert'
-import { ArrowLeft, Copy, Calculator, Loader2 } from 'lucide-react'
+import { ArrowLeft, Copy, Calculator, Loader2, CheckCircle } from 'lucide-react'
 import { supabase } from '@/lib/supabase'
 
 interface Folder {
@@ -28,6 +28,7 @@ interface FolderStats {
   sizeToTransfer?: number
   sizeToTransferGB?: number
   hasOnlyGoogleFiles?: boolean
+  allUpToDate?: boolean
 }
 
 export default function NewJobPage() {
@@ -40,6 +41,7 @@ export default function NewJobPage() {
   const [estimatedJobId, setEstimatedJobId] = useState<string | null>(null)
   const [error, setError] = useState<string | null>(null)
   const [scanComplete, setScanComplete] = useState(false)
+  const [userCredits, setUserCredits] = useState<number | null>(null)
   const [realtimeStats, setRealtimeStats] = useState<{
     discoveredItems: number
     discoveredFolders: number
@@ -65,6 +67,25 @@ export default function NewJobPage() {
     }
   }
 
+  // Fetch user credits on mount
+  useEffect(() => {
+    const fetchUserCredits = async () => {
+      const { data: { user } } = await supabase.auth.getUser()
+      if (user) {
+        const { data: profile } = await supabase
+          .from('profiles')
+          .select('credits')
+          .eq('id', user.id)
+          .single()
+        
+        if (profile) {
+          setUserCredits(profile.credits)
+        }
+      }
+    }
+    fetchUserCredits()
+  }, [])
+
   // Subscribe to real-time updates when estimating
   useEffect(() => {
     if (!estimatedJobId || scanComplete) return
@@ -74,12 +95,35 @@ export default function NewJobPage() {
       .on(
         'postgres_changes',
         {
-          event: 'UPDATE',
+          event: '*',
           schema: 'public',
           table: 'copy_jobs',
           filter: `id=eq.${estimatedJobId}`
         },
         (payload: any) => {
+          // Handle DELETE event when job is auto-deleted
+          if (payload.eventType === 'DELETE') {
+            setScanComplete(true)
+            setEstimating(false)
+            setEstimatedJobId(null)
+            
+            // Set stats to show everything is up to date
+            setStats({
+              totalFiles: 0,
+              totalFolders: 0,
+              totalItems: 0,
+              totalSize: 0,
+              totalSizeGB: 0,
+              sizeToTransfer: 0,
+              sizeToTransferGB: 0,
+              toCreate: 0,
+              toUpdate: 0,
+              toSkip: 0,
+              allUpToDate: true  // New flag to indicate everything is synced
+            })
+            return
+          }
+          
           const job = payload.new
           
           // Update real-time stats
@@ -98,7 +142,8 @@ export default function NewJobPage() {
             // Set final stats
             const totalItems = (job.discovered_items || 0) + (job.discovered_folders || 0)
             const skippedItems = job.skipped_items || 0
-            const itemsToCreate = totalItems - skippedItems
+            const updatedItems = job.updated_items || 0
+            const itemsToCreate = totalItems - skippedItems - updatedItems
             
             setStats({
               totalFiles: job.discovered_items || 0,
@@ -109,6 +154,7 @@ export default function NewJobPage() {
               sizeToTransfer: job.discovered_bytes || 0,
               sizeToTransferGB: (job.discovered_bytes || 0) / (1024 * 1024 * 1024),
               toCreate: itemsToCreate,
+              toUpdate: updatedItems,
               toSkip: skippedItems
             })
           }
@@ -203,8 +249,31 @@ export default function NewJobPage() {
       })
       
       if (!response.ok) {
-        const error = await response.json()
-        throw new Error(error.error || 'Failed to activate job')
+        const errorData = await response.json()
+        
+        // Handle insufficient credits error
+        if (response.status === 402) {
+          setError(`Insufficient credits: You have ${errorData.available} credits but need ${errorData.required} credits to process ${errorData.itemsToProcess} items.`)
+          
+          // Refresh user credits
+          const { data: { user } } = await supabase.auth.getUser()
+          if (user) {
+            const { data: profile } = await supabase
+              .from('profiles')
+              .select('credits')
+              .eq('id', user.id)
+              .single()
+            
+            if (profile) {
+              setUserCredits(profile.credits)
+            }
+          }
+        } else {
+          setError(errorData.error || 'Failed to activate job')
+        }
+        
+        setCreating(false)
+        return
       }
       
       const { jobId } = await response.json()
@@ -229,6 +298,10 @@ export default function NewJobPage() {
                 </Button>
               </Link>
               <h1 className="text-xl font-semibold">Create New Copy Job</h1>
+            </div>
+            <div className="flex items-center gap-2 text-sm">
+              <span className="text-gray-500">Credits:</span>
+              <span className="font-semibold">{userCredits ?? '...'}</span>
             </div>
           </div>
         </div>
@@ -321,8 +394,21 @@ export default function NewJobPage() {
                 </div>
               )}
               
+              {/* Show message when everything is up to date */}
+              {stats && stats.allUpToDate && (
+                <div className="p-4 bg-green-50 rounded-lg space-y-2">
+                  <div className="flex items-center gap-2 text-green-700">
+                    <CheckCircle className="w-5 h-5" />
+                    <p className="font-semibold">Everything is up to date!</p>
+                  </div>
+                  <p className="text-sm text-green-600">
+                    All files in the source folder are already synchronized with the destination.
+                  </p>
+                </div>
+              )}
+              
               {/* Show final stats after estimation */}
-              {stats && (
+              {stats && !stats.allUpToDate && (
                 <div className="p-4 bg-blue-50 rounded-lg space-y-4">
                   <div className="grid grid-cols-3 gap-4 text-center">
                     <div>
@@ -349,12 +435,23 @@ export default function NewJobPage() {
                     </div>
                     <div>
                       <p className="text-2xl font-bold text-blue-600">
-                        {Math.max(1, Math.ceil((stats.totalItems || 0) / 100))}
+                        {Math.ceil(((stats.toCreate || 0) + (stats.toUpdate || 0)) / 100) || 0}
                       </p>
                       <p className="text-sm text-blue-800">Credits Required</p>
                       <p className="text-xs text-blue-600 mt-1">
-                        (1 per 100 items)
+                        (1 per 100 items to process)
                       </p>
+                      {userCredits !== null && (
+                        <p className={`text-xs mt-1 ${
+                          userCredits >= Math.ceil(((stats.toCreate || 0) + (stats.toUpdate || 0)) / 100) 
+                            ? 'text-green-600' 
+                            : 'text-red-600'
+                        }`}>
+                          {userCredits >= Math.ceil(((stats.toCreate || 0) + (stats.toUpdate || 0)) / 100) 
+                            ? '✓ Sufficient credits' 
+                            : `✗ Need ${Math.ceil(((stats.toCreate || 0) + (stats.toUpdate || 0)) / 100) - userCredits} more credits`}
+                        </p>
+                      )}
                     </div>
                   </div>
                   
@@ -404,12 +501,20 @@ export default function NewJobPage() {
                 
                 <Button
                   onClick={createJob}
-                  disabled={creating || estimating || !scanComplete}
+                  disabled={
+                    creating || 
+                    estimating || 
+                    !scanComplete || 
+                    (stats?.allUpToDate) ||
+                    (stats && userCredits !== null && userCredits < Math.ceil(((stats.toCreate || 0) + (stats.toUpdate || 0)) / 100))
+                  }
                   className="flex-1"
                 >
                   <Copy className="w-4 h-4 mr-2" />
                   {creating ? 'Starting Job...' : 
                    !scanComplete ? 'Complete Scan First' : 
+                   stats?.allUpToDate ? 'Already Synchronized' :
+                   (stats && userCredits !== null && userCredits < Math.ceil(((stats.toCreate || 0) + (stats.toUpdate || 0)) / 100)) ? 'Insufficient Credits' :
                    'Start Copy Job'}
                 </Button>
               </div>

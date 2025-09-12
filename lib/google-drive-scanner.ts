@@ -7,6 +7,7 @@ interface ScanProgress {
   discoveredFolders: number
   discoveredBytes: number
   skippedItems: number
+  updatedItems: number
   lastPath: string
 }
 
@@ -50,6 +51,7 @@ export async function scanFolder(
   let discoveredFolders = 0
   let discoveredBytes = 0
   let skippedItems = 0
+  let updatedItems = 0
   const BATCH_SIZE = 10 // Reduced for more frequent progress updates
   
   // Build a map of destination folder structure
@@ -143,15 +145,26 @@ export async function scanFolder(
                 q: `name='${file.name!.replace(/'/g, "\\'")}'` +
                    ` and '${destParentId}' in parents` +
                    ` and trashed=false`,
-                fields: 'files(id)',
+                fields: 'files(id, modifiedTime)',
                 supportsAllDrives: true,
                 includeItemsFromAllDrives: true
               })
               
               if (existingFiles.data.files && existingFiles.data.files.length > 0) {
-                status = 'skipped'
-                destId = existingFiles.data.files[0].id!
-                skippedItems++
+                const existingFile = existingFiles.data.files[0]
+                destId = existingFile.id!
+                
+                // Compare modification times
+                const sourceModified = new Date(file.modifiedTime!)
+                const destModified = new Date(existingFile.modifiedTime!)
+                
+                if (sourceModified > destModified) {
+                  status = 'updated'  // Source is newer, needs update
+                  updatedItems++
+                } else {
+                  status = 'skipped'  // Destination is up to date
+                  skippedItems++
+                }
               }
             }
           }
@@ -190,6 +203,7 @@ export async function scanFolder(
                 discoveredFolders,
                 discoveredBytes,
                 skippedItems,
+                updatedItems,
                 lastPath: fullPath
               })
             }
@@ -257,6 +271,7 @@ export async function scanFolder(
           discoveredFolders,
           discoveredBytes,
           skippedItems,
+          updatedItems,
           lastPath: path
         })
       }
@@ -301,7 +316,7 @@ export async function scanFolder(
   // Calculate and print scan duration
   const duration = (Date.now() - startTime) / 1000
   console.log(`⏱️  Scan completed in ${duration.toFixed(2)} seconds`)
-  console.log(`📊 Results: ${discoveredItems} files, ${discoveredFolders} folders, ${skippedItems} skipped`)
+  console.log(`📊 Results: ${discoveredItems} files, ${discoveredFolders} folders, ${skippedItems} skipped, ${updatedItems} to update`)
   
   // Send final progress update with correct totals
   if (onProgress) {
@@ -311,6 +326,7 @@ export async function scanFolder(
       discoveredFolders,
       discoveredBytes,
       skippedItems,
+      updatedItems,
       lastPath: 'Scan completed'
     })
   }
@@ -319,7 +335,8 @@ export async function scanFolder(
     discoveredItems,
     discoveredFolders,
     discoveredBytes,
-    skippedItems
+    skippedItems,
+    updatedItems
   }
 }
 
@@ -362,12 +379,12 @@ export async function copyStoredItemsConcurrent(
   }
   console.log(`Folder map has ${folderMap.size} entries`)
   
-  // Get only pending items to copy
+  // Get pending and updated items to copy
   const { data: items, error } = await supabaseAdmin
     .from('copy_items')
     .select('*')
     .eq('job_id', jobId)
-    .eq('status', 'pending')
+    .in('status', ['pending', 'updated'])
     .order('source_path')
 
   if (error || !items) {
@@ -497,30 +514,62 @@ export async function copyStoredItemsConcurrent(
       const parentPath = file.source_path.substring(0, file.source_path.lastIndexOf('/'))
       const parentDestId = folderMap.get(parentPath) || destFolderId
       
-      // Trust the scan results - no need to check again
-      // We're only processing 'pending' items, so they need to be copied
-      
-      // Copy file
-      const response = await drive.files.copy({
-        fileId: file.source_id,
-        requestBody: {
-          name: file.source_name,
-          parents: [parentDestId]
-        },
-        fields: 'id',
-        supportsAllDrives: true
-      })
-
-      if (response.data.id) {
-        console.log(`  📄 Copied file: ${file.source_name}`)
+      // Check if this is an update or a new copy
+      if (file.status === 'updated' && file.new_id) {
+        // File exists but needs updating - delete old and copy new
+        console.log(`  🔄 Updating file: ${file.source_name}`)
         
-        await supabaseAdmin
-          .from('copy_items')
-          .update({ 
-            status: 'completed',
-            new_id: response.data.id 
-          })
-          .eq('id', file.id)
+        // Delete the old file
+        await drive.files.delete({
+          fileId: file.new_id,
+          supportsAllDrives: true
+        })
+        
+        // Copy the new version
+        const response = await drive.files.copy({
+          fileId: file.source_id,
+          requestBody: {
+            name: file.source_name,
+            parents: [parentDestId]
+          },
+          fields: 'id',
+          supportsAllDrives: true
+        })
+
+        if (response.data.id) {
+          console.log(`  ✅ Updated file: ${file.source_name}`)
+          
+          await supabaseAdmin
+            .from('copy_items')
+            .update({ 
+              status: 'completed',
+              new_id: response.data.id 
+            })
+            .eq('id', file.id)
+        }
+      } else {
+        // New file - just copy it
+        const response = await drive.files.copy({
+          fileId: file.source_id,
+          requestBody: {
+            name: file.source_name,
+            parents: [parentDestId]
+          },
+          fields: 'id',
+          supportsAllDrives: true
+        })
+
+        if (response.data.id) {
+          console.log(`  📄 Copied file: ${file.source_name}`)
+          
+          await supabaseAdmin
+            .from('copy_items')
+            .update({ 
+              status: 'completed',
+              new_id: response.data.id 
+            })
+            .eq('id', file.id)
+        }
       }
       
       completed++
