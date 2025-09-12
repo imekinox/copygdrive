@@ -10,7 +10,7 @@ NODE_ENV = "production"
 [[d1_databases]]
 binding = "DB"
 database_name = "gdrive-copier-db"
-database_id = "your-database-id-here"
+database_id = "ba850a11-a57b-43da-aef2-6d944bf238fd"
 
 # KV namespace for sessions (optional)
 [[kv_namespaces]]

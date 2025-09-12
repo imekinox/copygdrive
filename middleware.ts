@@ -1,4 +1,4 @@
-import { auth } from "@/auth.edge"
+import { auth } from "@/auth"
 import { NextResponse } from "next/server"
 import type { NextRequest } from "next/server"
 
@@ -8,6 +8,8 @@ export default auth((req) => {
                      req.nextUrl.pathname.startsWith("/register")
   const isPublicPage = req.nextUrl.pathname === "/" || 
                        req.nextUrl.pathname.startsWith("/api/auth") ||
+                       req.nextUrl.pathname.startsWith("/api/test-supabase") ||
+                       req.nextUrl.pathname.startsWith("/api/jobs") || // Allow job APIs for now
                        req.nextUrl.pathname === "/privacy" ||
                        req.nextUrl.pathname === "/terms" ||
                        req.nextUrl.pathname === "/security" ||

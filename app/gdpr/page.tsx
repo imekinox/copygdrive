@@ -31,8 +31,9 @@ export default function GDPRCompliancePage() {
         <div className="prose prose-gray max-w-none">
           <p className="text-lg text-gray-600 mb-8">
             Affix LLC, operating DriveCloner at copygdrive.com, is committed to complying with the General Data 
-            Protection Regulation (GDPR) for all European Union residents. This page outlines our GDPR compliance 
-            measures and your rights as a data subject.
+            Protection Regulation (GDPR) for all European Union residents. <strong>We prioritize your privacy by design - 
+            we NEVER access your file contents, only metadata necessary for the copy operation (filenames and folder structure).</strong> 
+            This page outlines our GDPR compliance measures and your rights as a data subject.
           </p>
 
           {/* GDPR Overview */}
@@ -42,8 +43,10 @@ export default function GDPRCompliancePage() {
               <div>
                 <h2 className="text-xl font-semibold mb-2">Our GDPR Commitment</h2>
                 <p className="text-gray-700">
-                  We process personal data lawfully, fairly, and transparently. We collect only what's necessary, 
-                  keep it accurate, store it securely, and respect your rights to access, correct, and delete your data.
+                  We process personal data lawfully, fairly, and transparently. We collect only what's necessary 
+                  (filename metadata only - never file contents), keep it accurate, store it securely, and respect 
+                  your rights to access, correct, and delete your data. Your files remain private - we cannot and 
+                  do not read them.
                 </p>
               </div>
             </div>
@@ -154,11 +157,20 @@ export default function GDPRCompliancePage() {
             <li><strong>Contact Data:</strong> Email address</li>
             <li><strong>Technical Data:</strong> IP address, browser type, device information</li>
             <li><strong>Usage Data:</strong> Service usage patterns, feature interactions</li>
+            <li><strong>File Metadata Only:</strong> Filenames, folder names, file sizes, folder structure (NOT file contents)</li>
             <li><strong>Transaction Data:</strong> Payment history, credit purchases</li>
             <li><strong>Marketing Data:</strong> Communication preferences</li>
           </ul>
 
-          <h3 className="text-xl font-semibold mt-6 mb-3">Special Categories</h3>
+          <h3 className="text-xl font-semibold mt-6 mb-3">What We Do NOT Access</h3>
+          <div className="bg-green-50 border border-green-200 rounded-lg p-4 mb-4">
+            <ul className="list-disc pl-6 space-y-2">
+              <li><strong>File Contents:</strong> We NEVER access, read, or store the contents of your files</li>
+              <li><strong>Personal Documents:</strong> Your documents, photos, videos remain completely private</li>
+              <li><strong>Sensitive Data:</strong> We cannot see what's inside your files</li>
+              <li><strong>Google Account Password:</strong> We use OAuth - we never see or store your password</li>
+            </ul>
+          </div>
           <p>We do NOT collect any special categories of personal data (racial or ethnic origin, political opinions, 
           religious beliefs, genetic data, biometric data, health data, or data about sexual orientation).</p>
 
@@ -169,9 +181,10 @@ export default function GDPRCompliancePage() {
             <ul className="list-disc pl-6 space-y-2">
               <li><strong>Account Data:</strong> Duration of account + 30 days</li>
               <li><strong>Transaction Records:</strong> 7 years (legal requirement)</li>
-              <li><strong>Copy Job History:</strong> 90 days</li>
+              <li><strong>Copy Job Metadata:</strong> 90 days (filenames only, no content)</li>
               <li><strong>Server Logs:</strong> 30 days</li>
               <li><strong>Marketing Data:</strong> Until consent withdrawn</li>
+              <li><strong>OAuth Tokens:</strong> Automatically refreshed, deleted on account deletion</li>
             </ul>
             <p className="mt-4 text-sm text-gray-600">
               We determine retention periods based on legal requirements, contract obligations, and legitimate business needs.
@@ -213,7 +226,7 @@ export default function GDPRCompliancePage() {
               <Database className="w-5 h-5 text-gray-500 mt-1" />
               <div>
                 <h4 className="font-semibold">Data Minimization</h4>
-                <p className="text-sm text-gray-600">Collect only necessary data</p>
+                <p className="text-sm text-gray-600">Metadata only, never file contents</p>
               </div>
             </div>
             
@@ -240,7 +253,7 @@ export default function GDPRCompliancePage() {
               <tbody>
                 <tr>
                   <td className="border px-4 py-2">Google</td>
-                  <td className="border px-4 py-2">OAuth, Drive API</td>
+                  <td className="border px-4 py-2">OAuth, Drive API (metadata only)</td>
                   <td className="border px-4 py-2">US/EU</td>
                 </tr>
                 <tr>

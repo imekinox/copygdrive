@@ -31,6 +31,7 @@ export default function FolderPicker({ mode, onSelect, selectedFolder }: FolderP
   const [view, setView] = useState<'root' | 'shared' | 'drives'>('root')
   const [currentPath, setCurrentPath] = useState<Folder[]>([])
   const [currentParentId, setCurrentParentId] = useState<string | null>(null)
+  const [isInSharedDrive, setIsInSharedDrive] = useState(false)
 
   const fetchFolders = async (options?: {
     sharedWithMe?: boolean
@@ -46,9 +47,15 @@ export default function FolderPicker({ mode, onSelect, selectedFolder }: FolderP
       if (options?.sharedDrives) params.append('sharedDrives', 'true')
       if (options?.parentId) params.append('parentId', options.parentId)
       
+      console.log(`Fetching folders: /api/drive/folders?${params}`)
       const response = await fetch(`/api/drive/folders?${params}`)
       
       if (!response.ok) {
+        if (response.status === 401 || response.status === 307) {
+          // Session expired or not authenticated
+          window.location.href = '/login'
+          return
+        }
         throw new Error('Failed to fetch folders')
       }
       
@@ -62,6 +69,7 @@ export default function FolderPicker({ mode, onSelect, selectedFolder }: FolderP
   }
 
   useEffect(() => {
+    console.log(`FolderPicker mounted/view changed: ${view}`)
     if (view === 'root') {
       fetchFolders()
     } else if (view === 'shared') {
@@ -74,7 +82,17 @@ export default function FolderPicker({ mode, onSelect, selectedFolder }: FolderP
   const navigateToFolder = async (folder: Folder) => {
     setCurrentPath([...currentPath, folder])
     setCurrentParentId(folder.id)
-    await fetchFolders({ parentId: folder.id })
+    
+    // If we're at the root of shared drives view, mark that we're now in a shared drive
+    if (view === 'drives' && currentPath.length === 0) {
+      setIsInSharedDrive(true)
+      await fetchFolders({ parentId: folder.id, sharedDrives: true })
+    } else if (view === 'shared') {
+      // When navigating within "Shared with me", just use parentId
+      await fetchFolders({ parentId: folder.id })
+    } else {
+      await fetchFolders({ parentId: folder.id, ...(isInSharedDrive && { sharedDrives: true }) })
+    }
   }
 
   const navigateBack = async () => {
@@ -86,11 +104,21 @@ export default function FolderPicker({ mode, onSelect, selectedFolder }: FolderP
     
     if (newPath.length === 0) {
       setCurrentParentId(null)
-      setView('root')
+      if (isInSharedDrive) {
+        setIsInSharedDrive(false)
+        setView('drives')
+      } else {
+        // Stay in the current view (root, shared, or drives)
+        setView(view)
+      }
     } else {
       const parentId = newPath[newPath.length - 1].id
       setCurrentParentId(parentId)
-      await fetchFolders({ parentId })
+      if (view === 'shared') {
+        await fetchFolders({ parentId })
+      } else {
+        await fetchFolders({ parentId, ...(isInSharedDrive && { sharedDrives: true }) })
+      }
     }
   }
 
@@ -134,14 +162,14 @@ export default function FolderPicker({ mode, onSelect, selectedFolder }: FolderP
               <Users className="w-4 h-4 mr-2" />
               Shared with me
             </Button>
-            {/* <Button
+            <Button
               variant={view === 'drives' ? 'default' : 'outline'}
               size="sm"
               onClick={() => setView('drives')}
             >
               <HardDrive className="w-4 h-4 mr-2" />
               Shared Drives
-            </Button> */}
+            </Button>
           </div>
         )}
 
@@ -155,13 +183,45 @@ export default function FolderPicker({ mode, onSelect, selectedFolder }: FolderP
             >
               <ArrowLeft className="w-4 h-4" />
             </Button>
-            <span className="text-muted-foreground">
-              {view === 'shared' ? 'Shared with me' : 'My Drive'}
-            </span>
+            <button
+              className="text-muted-foreground hover:text-foreground transition-colors cursor-pointer"
+              onClick={() => {
+                setCurrentPath([])
+                setCurrentParentId(null)
+                if (isInSharedDrive) {
+                  setIsInSharedDrive(false)
+                  setView('drives')
+                } else {
+                  setView(view)
+                }
+              }}
+            >
+              {view === 'shared' ? 'Shared with me' : view === 'drives' ? 'Shared Drives' : 'My Drive'}
+            </button>
             {currentPath.map((folder, index) => (
               <div key={folder.id} className="flex items-center gap-2">
                 <ChevronRight className="w-4 h-4 text-muted-foreground" />
-                <span>{folder.name}</span>
+                <button
+                  className="hover:text-blue-600 transition-colors cursor-pointer"
+                  onClick={async () => {
+                    // Navigate to this folder in the path
+                    const newPath = currentPath.slice(0, index + 1)
+                    setCurrentPath(newPath)
+                    setCurrentParentId(folder.id)
+                    
+                    // Maintain the context when navigating via breadcrumb
+                    if (view === 'shared') {
+                      await fetchFolders({ parentId: folder.id })
+                    } else {
+                      await fetchFolders({ 
+                        parentId: folder.id, 
+                        ...(isInSharedDrive && { sharedDrives: true }) 
+                      })
+                    }
+                  }}
+                >
+                  {folder.name}
+                </button>
               </div>
             ))}
           </div>

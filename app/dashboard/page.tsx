@@ -3,11 +3,22 @@ import { redirect } from "next/navigation"
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
 import { Button } from "@/components/ui/button"
 import Link from "next/link"
-import { prisma } from "@/lib/prisma"
+import { createClient } from '@supabase/supabase-js'
 import { signOut } from "@/auth"
 import JobsList from "@/components/JobsList"
-import RateLimitStatus from "@/components/RateLimitStatus"
 import GoogleDriveQuota from "@/components/GoogleDriveQuota"
+
+// Create Supabase client for server-side operations
+const supabase = createClient(
+  process.env.NEXT_PUBLIC_SUPABASE_URL!,
+  process.env.SUPABASE_SERVICE_ROLE_KEY!,
+  {
+    auth: {
+      autoRefreshToken: false,
+      persistSession: false
+    }
+  }
+)
 
 export default async function DashboardPage() {
   const session = await auth()
@@ -16,28 +27,41 @@ export default async function DashboardPage() {
     redirect("/login")
   }
   
-  // Get user's copy jobs
-  const jobs = await prisma.copyJob.findMany({
-    where: { userId: session.user.id },
-    orderBy: { createdAt: "desc" },
-    take: 10
-  })
+  // Get user's copy jobs from Supabase
+  const { data: jobs } = await supabase
+    .from('copy_jobs')
+    .select('*')
+    .eq('user_id', session.user.id)
+    .order('created_at', { ascending: false })
+    .limit(10)
   
-  // Get stats
-  const stats = await prisma.copyJob.aggregate({
-    where: { userId: session.user.id },
-    _count: true,
-    _sum: {
-      creditsUsed: true
-    }
-  })
+  // Get stats from Supabase
+  const { data: allJobs } = await supabase
+    .from('copy_jobs')
+    .select('total_bytes, completed_items, status')
+    .eq('user_id', session.user.id)
   
-  const activeJobs = await prisma.copyJob.count({
-    where: {
-      userId: session.user.id,
-      status: { in: ["queued", "scanning", "copying"] }
-    }
-  })
+  // Calculate total transferred bytes (only completed jobs)
+  const completedJobs = allJobs?.filter(job => job.status === 'completed') || []
+  const totalBytesTransferred = completedJobs.reduce((sum, job) => {
+    const bytes = parseInt(job.total_bytes || '0')
+    return sum + bytes
+  }, 0)
+  const totalGBTransferred = (totalBytesTransferred / (1024 * 1024 * 1024)).toFixed(2)
+  const totalItemsTransferred = completedJobs.reduce((sum, job) => sum + (job.completed_items || 0), 0)
+  
+  // Get active jobs count and user profile for credits
+  const { count: activeJobs } = await supabase
+    .from('copy_jobs')
+    .select('*', { count: 'exact', head: true })
+    .eq('user_id', session.user.id)
+    .in('status', ['queued', 'scanning', 'copying', 'processing'])
+  
+  const { data: profile } = await supabase
+    .from('profiles')
+    .select('credits')
+    .eq('id', session.user.id)
+    .single()
   
   return (
     <div className="min-h-screen bg-gray-50">
@@ -75,9 +99,9 @@ export default async function DashboardPage() {
               </CardTitle>
             </CardHeader>
             <CardContent>
-              <div className="text-2xl font-bold">{session.user.credits} GB</div>
+              <div className="text-2xl font-bold">{profile?.credits || 0}</div>
               <p className="text-xs text-muted-foreground mt-1">
-                Transfer quota remaining
+                Items remaining
               </p>
             </CardContent>
           </Card>
@@ -89,7 +113,7 @@ export default async function DashboardPage() {
               </CardTitle>
             </CardHeader>
             <CardContent>
-              <div className="text-2xl font-bold">{activeJobs}</div>
+              <div className="text-2xl font-bold">{activeJobs || 0}</div>
               <p className="text-xs text-muted-foreground mt-1">
                 Currently processing
               </p>
@@ -104,18 +128,17 @@ export default async function DashboardPage() {
             </CardHeader>
             <CardContent>
               <div className="text-2xl font-bold">
-                {stats._sum.creditsUsed || 0} GB
+                {totalGBTransferred} GB
               </div>
               <p className="text-xs text-muted-foreground mt-1">
-                Across {stats._count} jobs
+                {totalItemsTransferred} items completed
               </p>
             </CardContent>
           </Card>
         </div>
         
-        <div className="grid grid-cols-1 lg:grid-cols-2 gap-6 mb-6">
+        <div className="mb-6">
           <GoogleDriveQuota />
-          <RateLimitStatus />
         </div>
         
         <div className="flex justify-between items-center mb-6">
@@ -127,7 +150,15 @@ export default async function DashboardPage() {
         
         <Card>
           <CardContent className="p-0">
-            <JobsList jobs={jobs} />
+            <JobsList jobs={(jobs || []).map(job => ({
+              id: job.id,
+              sourceFolderName: job.source_folder_name,
+              destFolderName: job.dest_folder_name,
+              status: job.status,
+              totalItems: job.total_items,
+              completedItems: job.completed_items || 0,
+              createdAt: job.created_at
+            }))} />
           </CardContent>
         </Card>
       </main>

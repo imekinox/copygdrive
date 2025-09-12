@@ -1,6 +1,17 @@
 import { auth } from "@/auth"
 import { NextResponse } from "next/server"
-import { prisma } from "@/lib/prisma"
+import { createClient } from '@supabase/supabase-js'
+
+const supabaseAdmin = createClient(
+  process.env.NEXT_PUBLIC_SUPABASE_URL!,
+  process.env.SUPABASE_SERVICE_ROLE_KEY!,
+  {
+    auth: {
+      autoRefreshToken: false,
+      persistSession: false
+    }
+  }
+)
 
 export async function GET(
   request: Request,
@@ -14,37 +25,36 @@ export async function GET(
     }
     
     const params = await context.params
-    const job = await prisma.copyJob.findFirst({
-      where: {
-        id: params.id,
-        userId: session.user.id
-      },
-      select: {
-        id: true,
-        status: true,
-        totalItems: true,
-        completedItems: true,
-        failedItems: true,
-        copiedBytes: true,
-        totalBytes: true,
-        creditsUsed: true,
-        errorMessage: true,
-        sourceFolderName: true,
-        destFolderName: true,
-        destFolderId: true,
-        createdAt: true,
-        completedAt: true,
-        updatedAt: true
-      }
-    })
+    const { data: job, error: jobError } = await supabaseAdmin
+      .from('copy_jobs')
+      .select(`
+        id,
+        status,
+        total_items,
+        completed_items,
+        failed_items,
+        copied_bytes,
+        total_bytes,
+        credits_used,
+        error_message,
+        source_folder_name,
+        dest_folder_name,
+        dest_folder_id,
+        created_at,
+        completed_at,
+        updated_at
+      `)
+      .eq('id', params.id)
+      .eq('user_id', session.user.id)
+      .single()
     
-    if (!job) {
+    if (!job || jobError) {
       return NextResponse.json({ error: "Job not found" }, { status: 404 })
     }
     
     // Check if job is actually stalled (no updates in last 5 minutes for copying status)
     const isStalled = job.status === 'copying' && 
-      new Date(job.updatedAt).getTime() < Date.now() - (5 * 60 * 1000)
+      new Date(job.updated_at).getTime() < Date.now() - (5 * 60 * 1000)
     
     return NextResponse.json({
       ...job,

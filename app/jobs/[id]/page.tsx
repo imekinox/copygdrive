@@ -1,10 +1,13 @@
 import { auth } from "@/auth"
 import { redirect, notFound } from "next/navigation"
-import { prisma } from "@/lib/prisma"
 import Link from "next/link"
 import { Button } from "@/components/ui/button"
-import { ArrowLeft } from "lucide-react"
+import { ArrowLeft, ChevronLeft } from "lucide-react"
 import JobDetailsClient from "./JobDetailsClient"
+import JobDetailsRealtime from "./JobDetailsRealtime"
+import JobProgressRealtime from "./JobProgressRealtime"
+import { ScanningProgress } from "@/components/ScanningProgress"
+import { supabaseAdmin } from "@/lib/supabase-client"
 
 export default async function JobDetailPage({ params }: { params: Promise<{ id: string }> }) {
   const session = await auth()
@@ -14,66 +17,64 @@ export default async function JobDetailPage({ params }: { params: Promise<{ id: 
   }
   
   const resolvedParams = await params
-  const job = await prisma.copyJob.findFirst({
-    where: {
-      id: resolvedParams.id,
-      userId: session.user.id
-    },
-    select: {
-      id: true,
-      sourceFolderName: true,
-      destFolderName: true,
-      destFolderId: true,
-      status: true,
-      totalItems: true,
-      completedItems: true,
-      failedItems: true,
-      copiedBytes: true,
-      totalBytes: true,
-      creditsUsed: true,
-      errorMessage: true,
-      createdAt: true,
-      completedAt: true,
-      updatedAt: true
-    }
-  })
+  const jobId = resolvedParams.id
   
-  if (!job) {
+  // Fetch job from Supabase using id
+  const { data: jobs, error } = await supabaseAdmin
+    .from('copy_jobs')
+    .select('*')
+    .eq('id', jobId)
+    .single()
+  
+  if (error || !jobs) {
     notFound()
   }
   
-  // Check if job is stalled (no updates in last 5 minutes for copying status)
-  const isStalled = job.status === 'copying' && 
+  const job = {
+    id: jobs.id,
+    sourceFolderName: jobs.source_folder_name,
+    destFolderName: jobs.dest_folder_name,
+    destFolderId: jobs.dest_folder_id,
+    status: jobs.status,
+    totalItems: jobs.total_items || 0,
+    completedItems: jobs.completed_items || 0,
+    failedItems: 0,
+    copiedBytes: jobs.copied_bytes || '0',
+    totalBytes: jobs.total_bytes || '0',
+    creditsUsed: 0,
+    errorMessage: jobs.error_message,
+    createdAt: new Date(jobs.created_at),
+    completedAt: jobs.completed_at ? new Date(jobs.completed_at) : null,
+    updatedAt: new Date(jobs.created_at)
+  }
+  
+  // Check if job is stalled (no updates in last 5 minutes for processing status)
+  const isStalled = job.status === 'processing' && 
     new Date(job.updatedAt).getTime() < Date.now() - (5 * 60 * 1000)
   
   return (
-    <div className="min-h-screen bg-gray-50">
-      <nav className="bg-white shadow-sm border-b">
-        <div className="container mx-auto px-4 sm:px-6 lg:px-8">
-          <div className="flex justify-between h-16">
-            <div className="flex items-center gap-4">
-              <Link href="/dashboard">
-                <Button variant="ghost" size="sm">
-                  <ArrowLeft className="w-4 h-4 mr-2" />
-                  Back
-                </Button>
-              </Link>
-              <h1 className="text-xl font-semibold">Copy Job Details</h1>
-            </div>
+    <>
+      <nav className="border-b">
+        <div className="flex h-12 items-center px-4">
+          <div className="flex items-center gap-3">
+            <Link href="/dashboard">
+              <Button variant="ghost" size="sm" className="h-8">
+                <ChevronLeft className="h-4 w-4 mr-1" />
+                Back
+              </Button>
+            </Link>
+            <h1 className="text-lg font-semibold">Copy Job Details</h1>
           </div>
         </div>
       </nav>
 
-      <main className="container mx-auto px-4 sm:px-6 lg:px-8 py-8">
-        <JobDetailsClient 
-          initialJob={{
-            ...job,
-            createdAt: job.createdAt.toISOString(),
-            completedAt: job.completedAt?.toISOString() || null,
-            isStalled
-          }} 
-        />
+      <main className="container mx-auto px-4 sm:px-6 lg:px-8 py-4">
+        {/* Always use real-time from Supabase */}
+        <div className="space-y-4">
+          <JobDetailsRealtime jobId={jobs.id} />
+          <JobProgressRealtime jobId={jobs.id} initialStatus={job.status} />
+        </div>
       </main>
-    </div>
+    </>
   )
 }

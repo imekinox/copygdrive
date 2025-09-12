@@ -52,6 +52,17 @@ export default function TermsOfService() {
             including folders from "Shared with Me" to personal or organizational drives. The service operates within 
             Google's API limitations and quotas.
           </p>
+          <div className="bg-green-50 border border-green-200 rounded-lg p-4 mt-4">
+            <p className="font-semibold mb-2 text-green-800">🔒 Privacy-First Design:</p>
+            <ul className="list-disc pl-6 space-y-1">
+              <li><strong>We ONLY access file and folder names (metadata)</strong></li>
+              <li><strong>We NEVER read, download, or store file contents</strong></li>
+              <li>Files are copied directly within Google's infrastructure</li>
+              <li>Your documents, photos, and personal data remain completely private</li>
+              <li>No sensitive information from your files is ever exposed to our systems</li>
+              <li>We cannot see what's inside your documents, spreadsheets, or any other files</li>
+            </ul>
+          </div>
 
           <h2 className="text-2xl font-semibold mt-8 mb-4">3. User Accounts</h2>
           <h3 className="text-xl font-semibold mt-6 mb-3">3.1 Registration</h3>
@@ -74,12 +85,13 @@ export default function TermsOfService() {
           <ul className="list-disc pl-6 space-y-2">
             <li>Violate any laws or regulations</li>
             <li>Copy copyrighted content without authorization</li>
-            <li>Distribute malware, viruses, or harmful code</li>
+            <li>Distribute malware, viruses, or harmful code <em>(Note: We cannot detect this as we don't access file contents - only metadata)</em></li>
             <li>Attempt to circumvent Google Drive quotas or limitations</li>
             <li>Access or copy files you don't have permission to access</li>
             <li>Engage in any activity that disrupts or interferes with the service</li>
             <li>Resell, redistribute, or sublicense the service</li>
             <li>Use the service for illegal or unauthorized purposes</li>
+            <li>Attempt to reverse-engineer our privacy protections to access file contents</li>
           </ul>
 
           <h2 className="text-2xl font-semibold mt-8 mb-4">5. Service Limitations</h2>
@@ -101,9 +113,10 @@ export default function TermsOfService() {
           <h3 className="text-xl font-semibold mt-6 mb-3">6.1 Credits System</h3>
           <ul className="list-disc pl-6 space-y-2">
             <li>Services are provided on a credit-based system</li>
-            <li>1 credit = 1 GB of data transfer</li>
-            <li>Credits are deducted after successful transfer completion</li>
-            <li>Free tier includes 10GB of transfer credits</li>
+            <li>1 credit = 1 item (file or folder) processed</li>
+            <li>Credits are deducted based on the number of items copied</li>
+            <li>Free tier includes initial credits for testing</li>
+            <li>Only metadata is processed - file size doesn't affect credit usage</li>
           </ul>
 
           <h3 className="text-xl font-semibold mt-6 mb-3">6.2 Payments</h3>
@@ -124,14 +137,22 @@ export default function TermsOfService() {
           <h3 className="text-xl font-semibold mt-6 mb-3">7.2 Your Content</h3>
           <p>
             You retain all rights to your Google Drive content. We do not claim ownership of any files you copy 
-            using our service. You grant us only the minimal permissions necessary to provide the service.
+            using our service. You grant us only the minimal permissions necessary to provide the service - specifically, 
+            the ability to read folder structure and filenames to facilitate copying. We explicitly do NOT have permission 
+            to access, read, or store the contents of your files.
           </p>
 
           <h2 className="text-2xl font-semibold mt-8 mb-4">8. Privacy and Data Protection</h2>
           <p>
-            Your use of DriveCloner is also governed by our Privacy Policy. We do not access or store the contents 
-            of your files. We only process metadata necessary to perform copy operations.
+            Your use of DriveCloner is also governed by our Privacy Policy. <strong>We are committed to your privacy:</strong>
           </p>
+          <ul className="list-disc pl-6 space-y-2 mt-2">
+            <li>We NEVER access or store the contents of your files</li>
+            <li>We only process metadata (filenames, folder names, sizes) necessary to perform copy operations</li>
+            <li>Files are transferred directly within Google's infrastructure</li>
+            <li>Your OAuth tokens are encrypted and isolated</li>
+            <li>We comply with GDPR, CCPA, and other privacy regulations</li>
+          </ul>
 
           <h2 className="text-2xl font-semibold mt-8 mb-4">9. Disclaimers and Limitations of Liability</h2>
           <h3 className="text-xl font-semibold mt-6 mb-3">9.1 Service Provided "As Is"</h3>
@@ -175,7 +196,9 @@ export default function TermsOfService() {
           <ul className="list-disc pl-6 space-y-2">
             <li>Your right to use the service ceases immediately</li>
             <li>Unused credits are non-refundable</li>
-            <li>We may delete your account data after 30 days</li>
+            <li>We will delete your account data including any stored metadata after 30 days</li>
+            <li>OAuth tokens are immediately revoked</li>
+            <li>No file contents are retained (as we never had access to them)</li>
             <li>Provisions that should survive termination will remain in effect</li>
           </ul>
 

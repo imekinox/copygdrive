@@ -6,9 +6,10 @@ import {
   CheckCircle, Clock, AlertCircle, Loader2, FileText,
   Image, Video, Music, Archive, Code, Table, Presentation,
   FileSpreadsheet, CircleDot, HelpCircle, FileImage,
-  FileVideo, FileAudio, FileCode, FileArchive
+  FileVideo, FileAudio, FileCode, FileArchive, ArrowRight
 } from 'lucide-react'
 import { cn } from '@/lib/utils'
+import { supabase } from '@/lib/supabase'
 
 interface FileItem {
   id: string
@@ -32,28 +33,55 @@ export function FileTreeView({ jobId, className }: FileTreeViewProps) {
   const [expandedFolders, setExpandedFolders] = useState<Set<string>>(new Set())
 
   useEffect(() => {
+    // Initial fetch
     fetchTree()
-    const interval = setInterval(fetchTree, 3000) // Update every 3 seconds
-    return () => clearInterval(interval)
+
+    // Set up realtime subscription for copy_items changes
+    const channel = supabase
+      .channel(`file-tree-${jobId}`)
+      .on(
+        'postgres_changes',
+        {
+          event: '*', // Listen to all events (INSERT, UPDATE, DELETE)
+          schema: 'public',
+          table: 'copy_items',
+          filter: `job_id=eq.${jobId}`
+        },
+        (payload) => {
+          console.log('File tree update received:', payload.eventType)
+          // Refetch the tree when items change
+          fetchTree()
+        }
+      )
+      .subscribe()
+
+    return () => {
+      channel.unsubscribe()
+    }
   }, [jobId])
 
   const fetchTree = async () => {
     try {
+      console.log(`Fetching tree for job ${jobId}`)
       const response = await fetch(`/api/jobs/${jobId}/tree`)
       if (response.ok) {
         const text = await response.text()
         if (text) {
           try {
             const data = JSON.parse(text)
+            console.log(`Tree data received:`, data.tree?.length || 0, 'items')
             setTree(data.tree || [])
           } catch (parseError) {
             console.error('Failed to parse tree response:', parseError, 'Response:', text)
             setTree([])
           }
         } else {
+          console.log('Empty response from tree API')
           setTree([])
         }
         setLoading(false)
+      } else {
+        console.error('Tree API returned error:', response.status)
       }
     } catch (error) {
       console.error('Failed to fetch file tree:', error)
@@ -86,6 +114,8 @@ export function FileTreeView({ jobId, className }: FileTreeViewProps) {
         return <CircleDot className="w-4 h-4 text-yellow-500" />
       case 'pending':
         return <Clock className="w-4 h-4 text-gray-400" />
+      case 'skipped':
+        return <CheckCircle className="w-4 h-4 text-gray-400" />
       default:
         return <HelpCircle className="w-4 h-4 text-gray-400" />
     }
@@ -233,7 +263,17 @@ export function FileTreeView({ jobId, className }: FileTreeViewProps) {
   if (tree.length === 0) {
     return (
       <div className={cn("text-center p-8 text-gray-500", className)}>
-        No files to display yet. The scan is in progress...
+        {loading ? (
+          <div className="space-y-2">
+            <Loader2 className="w-6 h-6 animate-spin mx-auto" />
+            <p>Loading file tree...</p>
+          </div>
+        ) : (
+          <div className="space-y-2">
+            <p>Waiting for scan to begin...</p>
+            <p className="text-sm">Files will appear here as they are discovered</p>
+          </div>
+        )}
       </div>
     )
   }

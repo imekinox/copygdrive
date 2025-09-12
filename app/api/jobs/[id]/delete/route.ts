@@ -1,8 +1,19 @@
 import { auth } from "@/auth"
 import { NextResponse } from "next/server"
-import { prisma } from "@/lib/prisma"
+import { createClient } from '@supabase/supabase-js'
 
-export async function DELETE(
+const supabaseAdmin = createClient(
+  process.env.NEXT_PUBLIC_SUPABASE_URL!,
+  process.env.SUPABASE_SERVICE_ROLE_KEY!,
+  {
+    auth: {
+      autoRefreshToken: false,
+      persistSession: false
+    }
+  }
+)
+
+async function handleDelete(
   request: Request,
   context: { params: Promise<{ id: string }> }
 ) {
@@ -16,21 +27,26 @@ export async function DELETE(
     const params = await context.params
     
     // Check if job belongs to user
-    const job = await prisma.copyJob.findFirst({
-      where: {
-        id: params.id,
-        userId: session.user.id
-      }
-    })
+    const { data: job, error: jobError } = await supabaseAdmin
+      .from('copy_jobs')
+      .select('*')
+      .eq('id', params.id)
+      .eq('user_id', session.user.id)
+      .single()
     
-    if (!job) {
+    if (!job || jobError) {
       return NextResponse.json({ error: "Job not found" }, { status: 404 })
     }
     
     // Delete the job and all related items (cascade delete)
-    await prisma.copyJob.delete({
-      where: { id: params.id }
-    })
+    const { error: deleteError } = await supabaseAdmin
+      .from('copy_jobs')
+      .delete()
+      .eq('id', params.id)
+    
+    if (deleteError) {
+      throw deleteError
+    }
     
     return NextResponse.json({ success: true })
   } catch (error) {
@@ -40,4 +56,19 @@ export async function DELETE(
       { status: 500 }
     )
   }
+}
+
+// Support both DELETE and POST methods for compatibility
+export async function DELETE(
+  request: Request,
+  context: { params: Promise<{ id: string }> }
+) {
+  return handleDelete(request, context)
+}
+
+export async function POST(
+  request: Request,
+  context: { params: Promise<{ id: string }> }
+) {
+  return handleDelete(request, context)
 }

@@ -56,9 +56,10 @@ export default function JobsList({ jobs: initialJobs }: JobsListProps) {
   
   const getStatusColor = (status: string) => {
     const colors = {
-      queued: "bg-gray-100 text-gray-800",
+      draft: "bg-gray-100 text-gray-800",
+      queued: "bg-yellow-100 text-yellow-800",
       scanning: "bg-blue-100 text-blue-800",
-      copying: "bg-yellow-100 text-yellow-800",
+      copying: "bg-purple-100 text-purple-800",
       completed: "bg-green-100 text-green-800",
       failed: "bg-red-100 text-red-800",
       cancelled: "bg-gray-100 text-gray-800"
@@ -67,7 +68,7 @@ export default function JobsList({ jobs: initialJobs }: JobsListProps) {
   }
   
   const canDelete = (status: string) => {
-    return ['completed', 'failed', 'cancelled', 'queued'].includes(status)
+    return ['completed', 'failed', 'cancelled', 'draft'].includes(status)
   }
   
   if (jobs.length === 0) {
